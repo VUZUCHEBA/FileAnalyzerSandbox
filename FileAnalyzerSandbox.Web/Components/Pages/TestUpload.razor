@@ -1,0 +1,24 @@
+﻿@page "/simple"
+
+<h1>Тест</h1>
+
+<button class="btn btn-primary" @onclick="OnClick">
+    Нажми меня
+</button>
+
+@if (clicked)
+{
+    <div class="alert alert-success mt-3">
+        Кнопка сработала! Время: @DateTime.Now
+    </div>
+}
+
+@code {
+    private bool clicked = false;
+
+    private void OnClick()
+    {
+        clicked = true;
+        Console.WriteLine("Кнопка нажата!");
+    }
+}

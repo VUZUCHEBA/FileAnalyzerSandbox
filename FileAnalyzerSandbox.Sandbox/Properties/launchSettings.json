@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "FileAnalyzerSandbox.Sandbox": {
+      "commandName": "Project"
+    },
+    "Container (Dockerfile)": {
+      "commandName": "Docker"
+    }
+  }
+}

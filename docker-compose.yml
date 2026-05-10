@@ -1,0 +1,12 @@
+services:
+  fileanalyzersandbox.web:
+    image: ${DOCKER_REGISTRY-}fileanalyzersandboxweb
+    build:
+      context: .
+      dockerfile: FileAnalyzerSandbox.Web/Dockerfile
+    ports:
+      - "5000:8080"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - DOCKER_RUNNING=true

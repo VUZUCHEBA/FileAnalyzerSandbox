@@ -1,0 +1,171 @@
+﻿@page "/details/{Id:guid}"
+@using FileAnalyzerSandbox.Application.DTOs
+@using FileAnalyzerSandbox.Application.Services
+@inject IFileAnalysisService FileAnalysisService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>Детали анализа</PageTitle>
+
+<div class="container mt-4">
+    <div class="card shadow">
+        <div class="card-header bg-info text-white">
+            <h3>Детали анализа файла</h3>
+        </div>
+        <div class="card-body">
+            @if (analysis == null)
+            {
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Загрузка...</span>
+                    </div>
+                    <p class="mt-2">Загрузка данных...</p>
+                </div>
+            }
+            else
+            {
+                <!-- Основная информация -->
+                <div class="row mb-3">
+                    <div class="col-md-3 fw-bold">Имя файла:</div>
+                    <div class="col-md-9">@analysis.OriginalFileName</div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-3 fw-bold">Размер:</div>
+                    <div class="col-md-9">@FormatFileSize(analysis.FileSize)</div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-3 fw-bold">Тип файла:</div>
+                    <div class="col-md-9">@analysis.FileType</div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-3 fw-bold">SHA256 хэш:</div>
+                    <div class="col-md-9">
+                        <code class="small">@analysis.FileHash</code>
+                        <button class="btn btn-sm btn-outline-secondary ms-2" @onclick="() => CopyToClipboard(analysis.FileHash)">
+                            📋
+                        </button>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-3 fw-bold">Статус:</div>
+                    <div class="col-md-9">
+                        <span class="badge @GetStatusBadgeClass(analysis.Status)">
+                            @GetStatusText(analysis.Status)
+                        </span>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-3 fw-bold">Уровень угрозы:</div>
+                    <div class="col-md-9">
+                        <span class="badge @GetThreatBadgeClass(analysis.ThreatLevel) fs-6 p-2">
+                            @(analysis.ThreatLevel ?? "Не определён")
+                        </span>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-3 fw-bold">Дата загрузки:</div>
+                    <div class="col-md-9">@analysis.UploadedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss")</div>
+                </div>
+
+                @if (analysis.AnalyzedAt.HasValue)
+                {
+                    <div class="row mb-3">
+                        <div class="col-md-3 fw-bold">Дата анализа:</div>
+                        <div class="col-md-9">@analysis.AnalyzedAt.Value.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss")</div>
+                    </div>
+                }
+
+                <!-- Результат анализа -->
+                <div class="mt-4">
+                    <div class="card @GetResultCardClass(analysis.ThreatLevel)">
+                        <div class="card-header">
+                            <h5 class="mb-0">Результат анализа</h5>
+                        </div>
+                        <div class="card-body">
+                            <pre class="bg-dark text-light p-3 rounded" style="white-space: pre-wrap; font-family: monospace;">@analysis.AnalysisResult</pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Кнопки действий -->
+                <div class="mt-4">
+                    <a href="/history" class="btn btn-secondary">← Назад к истории</a>
+                    <a href="/upload" class="btn btn-primary ms-2">📁 Новый анализ</a>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private FileAnalysisDto? analysis;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            analysis = await FileAnalysisService.GetAnalysisResultAsync(Id);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка загрузки: {ex.Message}");
+        }
+    }
+
+    private string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} Б";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F2} КБ";
+        return $"{bytes / (1024.0 * 1024.0):F2} МБ";
+    }
+
+    private string GetStatusBadgeClass(string status) => status?.ToLower() switch
+    {
+        "completed" => "bg-success",
+        "processing" => "bg-warning",
+        "pending" => "bg-info",
+        "failed" => "bg-danger",
+        _ => "bg-secondary"
+    };
+
+    private string GetStatusText(string status) => status?.ToLower() switch
+    {
+        "completed" => "✅ Завершён",
+        "processing" => "⏳ Анализируется",
+        "pending" => "📋 В очереди",
+        "failed" => "❌ Ошибка",
+        _ => status ?? "Неизвестно"
+    };
+
+    private string GetThreatBadgeClass(string? threat) => threat?.ToLower() switch
+    {
+        "безопасно" or "safe" => "bg-success",
+        "низкий" or "low" => "bg-info",
+        "средний" or "medium" => "bg-warning",
+        "высокий" or "high" => "bg-danger",
+        "критический" or "critical" => "bg-dark",
+        _ => "bg-secondary"
+    };
+
+    private string GetResultCardClass(string? threat) => threat?.ToLower() switch
+    {
+        "безопасно" or "safe" => "border-success",
+        "низкий" or "low" => "border-info",
+        "средний" or "medium" => "border-warning",
+        "высокий" or "high" => "border-danger",
+        "критический" or "critical" => "border-dark",
+        _ => "border-secondary"
+    };
+
+    private async Task CopyToClipboard(string text)
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+    }
+}

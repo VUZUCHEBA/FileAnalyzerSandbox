@@ -1,0 +1,279 @@
+﻿@page "/upload"
+@using FileAnalyzerSandbox.Application.DTOs
+@using FileAnalyzerSandbox.Application.Services
+@inject IFileAnalysisService FileAnalysisService
+@inject IJSRuntime JS
+
+<PageTitle>Загрузка файла - Анализатор</PageTitle>
+
+<div class="container mt-4">
+    <div class="card shadow">
+        <div class="card-header bg-primary text-white">
+            <h3>🔒 Анализ файлов в изолированной песочнице</h3>
+        </div>
+        <div class="card-body">
+            <!-- Информация -->
+            <div class="alert alert-info">
+                <strong>📌 Информация:</strong>
+                <ul class="mb-0 mt-2">
+                    <li>Файлы анализируются в изолированной среде (песочнице)</li>
+                    <li>Максимальный размер файла: <strong>20 МБ</strong></li>
+                    <li>Поддерживаются любые типы файлов</li>
+                    <li>Анализ включает проверку на вирусы, макросы и вредоносный код</li>
+                </ul>
+            </div>
+
+            <!-- Выбор файла -->
+            <div class="mb-3">
+                <label class="form-label fw-bold">Выберите файл для анализа:</label>
+                <InputFile OnChange="OnFileSelected" class="form-control" />
+                <div class="form-text">Поддерживаются: PDF, DOC, XLS, TXT, EXE, JS и другие</div>
+            </div>
+
+            <!-- Информация о выбранном файле -->
+            @if (selectedFile != null)
+            {
+                <div class="alert alert-secondary">
+                    <strong>📄 Выбранный файл:</strong><br />
+                    Имя: @selectedFile.Name<br />
+                    Размер: @(FormatFileSize(selectedFile.Size))<br />
+                    Тип: @selectedFile.ContentType
+                </div>
+            }
+
+            <!-- Кнопка загрузки -->
+            <button class="btn btn-primary btn-lg" @onclick="UploadFile" disabled="@isUploading">
+                @if (isUploading)
+                {
+                    <span class="spinner-border spinner-border-sm me-2"></span>
+                    <span>Анализ файла...</span>
+                }
+                else
+                {
+                    <span>Выполнить анализ 🚀 </span>
+                }
+            </button>
+
+            <!-- Ошибки -->
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="alert alert-danger mt-3">
+                    <strong>❌ Ошибка:</strong> @errorMessage
+                </div>
+            }
+
+            <!-- Результаты анализа -->
+            @if (analysisResult != null)
+            {
+                <div class="mt-4">
+                    <div class="card">
+                        <div class="card-header @GetResultHeaderClass(analysisResult.ThreatLevel)">
+                            <h4 class="mb-0">📊 Результаты анализа</h4>
+                        </div>
+                        <div class="card-body">
+                            <!-- Уровень угрозы -->
+                            <div class="row mb-3">
+                                <div class="col-md-3 fw-bold">Уровень угрозы:</div>
+                                <div class="col-md-9">
+                                    <span class="badge @GetThreatBadgeClass(analysisResult.ThreatLevel) fs-6 p-2">
+                                        @analysisResult.ThreatLevel
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Статус безопасности -->
+                            <div class="row mb-3">
+                                <div class="col-md-3 fw-bold">Статус:</div>
+                                <div class="col-md-9">
+                                    @if (analysisResult.IsSafe)
+                                    {
+                                        <span class="badge bg-success fs-6 p-2">✅ Файл безопасен</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-danger fs-6 p-2">⚠️ Обнаружены угрозы!</span>
+                                    }
+                                </div>
+                            </div>
+
+                            <!-- Хэш файла -->
+                            <div class="row mb-3">
+                                <div class="col-md-3 fw-bold">SHA256 хэш:</div>
+                                <div class="col-md-9">
+                                    <code class="small">@analysisResult.FileHash</code>
+                                </div>
+                            </div>
+
+                            <!-- Время анализа -->
+                            <div class="row mb-3">
+                                <div class="col-md-3 fw-bold">Время анализа:</div>
+                                <div class="col-md-9">
+                                    @analysisResult.AnalysisDuration.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss")
+                                </div>
+                            </div>
+
+                            <!-- Обнаруженные угрозы -->
+                            @if (analysisResult.Threats != null && analysisResult.Threats.Any())
+                            {
+                                <div class="alert alert-warning mt-2">
+                                    <strong>⚠️ Обнаруженные угрозы:</strong>
+                                    <ul class="mb-0 mt-2">
+                                        @foreach (var threat in analysisResult.Threats)
+                                        {
+                                            <li>@threat</li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+
+                            <!-- Детальный отчет -->
+                            <div class="mt-3">
+                                <strong>Детальный отчёт:</strong>
+                                <pre class="bg-light p-3 rounded mt-2" style="white-space: pre-wrap;">@analysisResult.Result</pre>
+                            </div>
+
+                            <!-- Кнопки действий -->
+                            <div class="mt-3">
+                                <a href="/history" class="btn btn-info me-2">📜 История анализов</a>
+                                <button class="btn btn-secondary" @onclick="ResetForm">🔄 Новый файл</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private IBrowserFile? selectedFile;
+    private bool isUploading = false;
+    private string errorMessage = string.Empty;
+    private SandboxResultDto? analysisResult;
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+        errorMessage = string.Empty;
+        analysisResult = null;
+
+        if (selectedFile != null && selectedFile.Size > 20 * 1024 * 1024)
+        {
+            errorMessage = "Файл превышает максимальный размер 20 МБ";
+            selectedFile = null;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task UploadFile()
+    {
+        if (selectedFile == null)
+        {
+            errorMessage = "Пожалуйста, выберите файл для анализа";
+            return;
+        }
+
+        isUploading = true;
+        errorMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            // Временный пользователь (в реальном приложении нужно получать из аутентификации)
+            var userId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+            // Чтение файла
+            using var memoryStream = new MemoryStream();
+            await selectedFile.OpenReadStream(maxAllowedSize: 20 * 1024 * 1024)
+                .CopyToAsync(memoryStream);
+
+            var fileContent = memoryStream.ToArray();
+
+            // Подготовка DTO
+            var uploadDto = new UploadFileDto
+            {
+                FileName = selectedFile.Name,
+                Content = fileContent,
+                UserId = userId
+            };
+
+            // Шаг 1: Загрузка файла
+            var uploadResult = await FileAnalysisService.UploadFileAsync(uploadDto);
+
+            // Шаг 2: Запуск анализа
+            await FileAnalysisService.StartAnalysisAsync(uploadResult.Id);
+
+            // Шаг 3: Получение результата
+            var finalResult = await FileAnalysisService.GetAnalysisResultAsync(uploadResult.Id);
+
+            // Шаг 4: Преобразование для отображения
+            analysisResult = new SandboxResultDto
+            {
+                Result = finalResult.AnalysisResult ?? "Анализ завершён. Подробный отчёт смотрите выше.",
+                ThreatLevel = finalResult.ThreatLevel ?? "Не определён",
+                IsSafe = finalResult.ThreatLevel == "Безопасно",
+                Threats = new List<string>(), // Можно заполнить при необходимости
+                ThreatDetails = new List<string>(),
+                FileHash = finalResult.FileHash,
+                AnalysisDuration = finalResult.AnalyzedAt ?? DateTime.Now
+            };
+
+            // Уведомление
+            await JS.InvokeVoidAsync("alert", $"✅ Анализ завершён! Уровень угрозы: {analysisResult.ThreatLevel}");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Ошибка при анализе файла: {ex.Message}";
+            Console.WriteLine($"Ошибка: {ex.Message}");
+        }
+        finally
+        {
+            isUploading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ResetForm()
+    {
+        selectedFile = null;
+        errorMessage = string.Empty;
+        analysisResult = null;
+        StateHasChanged();
+    }
+
+    private string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} Б";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F2} КБ";
+        return $"{bytes / (1024.0 * 1024.0):F2} МБ";
+    }
+
+    private string GetResultHeaderClass(string? threatLevel)
+    {
+        if (threatLevel == null) return "bg-secondary text-white";
+        return threatLevel.ToLower() switch
+        {
+            "безопасно" => "bg-success text-white",
+            "низкий" => "bg-info text-white",
+            "средний" => "bg-warning text-dark",
+            "высокий" => "bg-danger text-white",
+            "критический" => "bg-dark text-white",
+            _ => "bg-secondary text-white"
+        };
+    }
+
+    private string GetThreatBadgeClass(string? threatLevel)
+    {
+        if (threatLevel == null) return "bg-secondary";
+        return threatLevel.ToLower() switch
+        {
+            "безопасно" => "bg-success",
+            "низкий" => "bg-info",
+            "средний" => "bg-warning",
+            "высокий" => "bg-danger",
+            "критический" => "bg-dark",
+            _ => "bg-secondary"
+        };
+    }
+}
